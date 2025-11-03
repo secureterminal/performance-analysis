@@ -1,0 +1,1 @@
+python -c "import re; lines=open('requirements.txt').read().splitlines(); open('requirements.txt','w').write('\n'.join(re.sub(r'^(pywin32==|pywinpty==)', r'\\1; sys_platform == \"win32\"', l) for l in lines))"

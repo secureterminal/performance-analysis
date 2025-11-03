@@ -116,8 +116,8 @@ python-json-logger==3.3.0
 python-multipart==0.0.20
 pytokens==0.2.0
 pytz==2025.2
-pywin32==311
-pywinpty==3.0.0
+pywin32==; sys_platform == "win32"311
+pywinpty==; sys_platform == "win32"3.0.0
 PyYAML==6.0.2
 pyzmq==27.1.0
 questionary==2.1.1
