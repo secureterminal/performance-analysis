@@ -71,14 +71,14 @@ if not st.session_state.logged_in:
 
 else:
     st.set_page_config(page_title="Performance Dashboard", page_icon="📊", layout="wide")
-    st.title("📊 Performance Dashboard")
+    # st.title("📊 Performance Dashboard")
 
     # Block unauthenticated access
     if not st.session_state.get("logged_in", False):
         st.warning("🔒 Please log in to view this page.")
         st.stop()
 
-    st.title("Dashboard Home")  # Main page title (if needed)
+    # st.title("Dashboard Home")  # Main page title (if needed)
 
     if not st.session_state.file_uploaded:
 
