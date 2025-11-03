@@ -52,21 +52,26 @@ if "logged_in" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "home"
 
+# Initialize session variable
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
 if not st.session_state.logged_in:
     st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
+
     if st.button("Login"):
-        if username == "admin" and password == "@cwLwNA945nNShp@cwLwNA945nNShp":
+        if username.strip() == "admin" and password.strip() == "@cwLwNA945nNShp@cwLwNA945nNShp":
             st.session_state.logged_in = True
+            st.success("Login successful! Loading dashboard...")
             st.rerun()
         else:
             st.error("Wrong credentials")
 
 else:
-    st.set_page_config(
-        page_title="Performance Dashboard", page_icon="📊", layout="wide"
-    )
+    st.set_page_config(page_title="Performance Dashboard", page_icon="📊", layout="wide")
+    st.title("📊 Performance Dashboard")
 
     # Block unauthenticated access
     if not st.session_state.get("logged_in", False):
