@@ -313,12 +313,42 @@ else:
 
         with col4:
             with st.container(border=True):
-                st.metric(label="Average PA", value=pd.to_numeric(pa_df['PA'], errors='coerce').mean().round(2), delta=f"{gains[0]:,}")
+                pa_df['Datetime'] = pd.to_datetime(pa_df['Date'], errors='coerce')
+
+                # Extract Year and Month
+                pa_df['Year'] = pa_df['Datetime'].dt.year
+                pa_df['Month'] = pa_df['Datetime'].dt.month
+
+                # Get most recent year and month
+                latest_year = pa_df['Year'].max()
+                latest_month = pa_df[pa_df['Year'] == latest_year]['Month'].max()
+
+                # Filter for that month
+                latest_month_df = pa_df[(pa_df['Year'] == latest_year) & (pa_df['Month'] == latest_month)]
+
+                # Compute average PA
+                monthly_avg_pa = pd.to_numeric(latest_month_df['PA'], errors='coerce').mean().round(2)
+
+                st.metric(label=f"{calendar.month_name[max_month]} PA", value=monthly_avg_pa, delta=f"{gains[0]:,}")
             
 
         with col5:
             with st.container(border=True):
-                st.metric(label="Outage Count", value=human_format(len(df)), delta=f"{gains[0]:,}")
+                # Extract ISO Year and Week
+                pa_df['Week'] = pa_df['Datetime'].dt.isocalendar().week
+                pa_df['ISO_Year'] = pa_df['Datetime'].dt.isocalendar().year
+
+                # Get most recent ISO year and week
+                latest_iso_year = pa_df['ISO_Year'].max()
+                latest_week = pa_df[pa_df['ISO_Year'] == latest_iso_year]['Week'].max()
+
+                # Filter for that week
+                latest_week_df = pa_df[(pa_df['ISO_Year'] == latest_iso_year) & (pa_df['Week'] == latest_week)]
+
+                # Compute average PA
+                weekly_avg_pa = pd.to_numeric(latest_week_df['PA'], errors='coerce').mean().round(2)
+
+                st.metric(label=f"Week {latest_week} PA", value=weekly_avg_pa, delta=f"{gains[0]:,}")
             
 
         chart_col1, chart_col2 = st.columns(2)
