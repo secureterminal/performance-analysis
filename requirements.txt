@@ -170,3 +170,6 @@ websockets==15.0.1
 widgetsnbextension==4.0.14
 xlrd==2.0.2
 yfinance==0.2.66
+folium==0.17.0
+streamlit-folium==0.20.0
+pyxlsb==1.0.10

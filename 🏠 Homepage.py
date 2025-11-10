@@ -53,6 +53,9 @@ if "page" not in st.session_state:
     st.session_state.page = "home"
 
 # Initialize session variable
+if "login_messages" in st.session_state:
+    st.warning(st.session_state.login_messages)
+    st.session_state.login_messages = None
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
@@ -125,10 +128,11 @@ else:
         # ----------------------------
         # Load and store processed data in session_state
         if "df_init" not in st.session_state:
-            df1, pa_df1, db1 = calcs.get_sheets(st.session_state.file)
+            df1, pa_df1, db1, db_full1 = calcs.get_sheets(st.session_state.file)
             st.session_state["df_init"] = df1
             st.session_state["pa_init"] = pa_df1
             st.session_state["db"] = db1
+            st.session_state["db_full"] = db_full1
         else:
             df1 = st.session_state["df_init"]
             pa_df1 = st.session_state["pa_init"]

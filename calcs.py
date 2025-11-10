@@ -21,34 +21,66 @@ def get_sheets(file):
     tch_init = sheets["tch"]
 
     # --- Clean Outages ---
+    # Remove duplicates based on "IHS Site ID"
+    db_full = db_init.copy()
+
+    db_1 = db_full.copy()[[
+        "IHS Site ID", "Tenants On Site", "IHS Site Priority", "Zone", "Region",
+        "State", "EFS Name", "RTO Name", "Head, Field Service", "SBC"
+    ]]
+
+    db = db_1.drop_duplicates(subset=["IHS Site ID"], keep="first").reset_index(drop=True)
+
+    db_full["tenant_and_id"] = db_full["Tenant Name"].astype(str) + "_" + db_full["Tenant ID"].astype(str)
+
+
     df_init["Date"] = pd.to_datetime(df_init["Date"], format="%d/%m/%Y", errors="coerce").dt.date
     df_init["Duration"] = df_init["Duration"].apply(
         lambda x: datetime.timedelta(hours=x.hour, minutes=x.minute, seconds=x.second)
         if isinstance(x, datetime.time)
         else x
     )
+
     df_init["Duration_timedelta"] = pd.to_timedelta(df_init["Duration"], errors="coerce")
     df_init = df_init.drop(columns=["Tenants On Site"], errors="ignore")
 
-    db = db_init.copy()[[
-        "IHS Site ID", "Tenants On Site", "IHS Site Priority", "Zone", "Region",
-        "State", "EFS Name", "RTO Name", "Head, Field Service", "SBC"
-    ]]
+
     df_init = pd.merge(df_init, db, on="IHS Site ID", how="left")
     df_init = df_init[df_init["Year"] == datetime.date.today().year]
 
     # --- Clean PA ---
-    pa_init = pa_init.rename(columns={"Site ID": "IHS Site ID"})
-    pa_init = pa_init.melt(id_vars=["IHS Site ID"], var_name="Date", value_name="PA")
-    pa_init["Date"] = pd.to_datetime(pa_init["Date"], format="%d/%m/%Y", errors="coerce").dt.date
-    pa_init["PA"] = pd.to_numeric(pa_init["PA"].replace("-", np.nan), errors="coerce").round(2)
+    # Check the columns in pa_init and determine the correct site ID column
+    possible_site_id_cols = ["Site ID", "IHS Site ID", "Site_ID", "SiteID"]
+    site_id_col = None
+    for col in possible_site_id_cols:
+        if col in pa_init.columns:
+            site_id_col = col
+            break
+    
+    if site_id_col is None:
+        st.error(f"No site ID column found in PA sheet. Available columns: {', '.join(pa_init.columns)}")
+        return None, None, None, None
+        
+    if site_id_col != "IHS Site ID":
+        pa_init = pa_init.rename(columns={site_id_col: "IHS Site ID"})
+    
+    # Get all date columns (exclude the site ID column)
+    date_columns = [col for col in pa_init.columns if col != "IHS Site ID"]
+    
+    try:
+        pa_init = pa_init.melt(id_vars=["IHS Site ID"], value_vars=date_columns, var_name="Date", value_name="PA")
+        pa_init["Date"] = pd.to_datetime(pa_init["Date"], format="%d/%m/%Y", errors="coerce").dt.date
+        pa_init["PA"] = pd.to_numeric(pa_init["PA"].replace("-", np.nan), errors="coerce").round(2)
+    except Exception as e:
+        st.error(f"Error processing PA data: {str(e)}")
+        return None, None, None, None
 
     # Downcast for memory efficiency
     pa_init["IHS Site ID"] = pa_init["IHS Site ID"].astype("category")
     pa_init["Date"] = pa_init["Date"].astype("category")
     pa_init["PA"] = pa_init["PA"].astype("float32")
 
-    return df_init, pa_init, db
+    return df_init, pa_init, db, db_full
 
 
 

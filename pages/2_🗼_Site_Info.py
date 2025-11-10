@@ -42,16 +42,8 @@ CUSTOMERS = ["MTN NG", "Airtel NG"]
 # Block unauthenticated access
 if not st.session_state.get("logged_in", False):
     st.error("🔒 Please log in to view this page.")
-    st.page_link("app.py", label="Login", icon="🔐")
-    st.stop()
-
-# Page content here
-# center the title
-# st.subheader("🗼 Site Information") 
-# st.write("Welcome to your Site Information dashboard.")
-
-# line break
-# st.markdown("---")
+    st.session_state.login_messages = "Please login to view this site"
+    st.switch_page("🏠 Homepage.py")
 
 
 
@@ -66,10 +58,12 @@ st.set_page_config(layout="wide", page_title="Site Information Dashboard")
 df1 = st.session_state["df_init"]
 pa_df1 = st.session_state["pa_init"]
 db1 = st.session_state["db"]
+db_full1 = st.session_state["db_full"]
 
 df = df1.copy()
 db = db1.copy()
 pa_df = pa_df1.copy()
+db_full = db_full1.copy()
 
 pa_df = pd.merge(pa_df, db, on="IHS Site ID", how="left")
 
@@ -139,16 +133,9 @@ df = df[(df["Date"] >= start_date) & (df["Date"] <= end_date)]
 
 
 
-# Site ID Filter
-
+# IHS Site ID Filter
 
 top_site = df["IHS Site ID"].value_counts().idxmax()
-# outage_count = df["IHS Site ID"].value_counts().max()
-
-# st.write(f"📍 Site with the highest outage count: **{top_site}** ({outage_count} outages)")
-
-# site_id = st.sidebar.selectbox("IHS Site ID", ["Select Site"] + df["IHS Site ID"].dropna().sort_values().unique().tolist())
-
 
 # Prepare the site list
 site_list = ["Select Site"] + df["IHS Site ID"].dropna().sort_values().unique().tolist()
@@ -165,6 +152,22 @@ if site_id and site_id != "Select Site":
     pa_df = pa_df[pa_df["IHS Site ID"] == site_id]
 
 
+# Tenant ID Filter
+top_site1 = db_full.loc[db_full["IHS Site ID"] == top_site, "tenant_and_id"].iloc[0]
+
+# Prepare the site list
+tenant_site_list = ["Select Site"] + db_full["tenant_and_id"].dropna().sort_values().unique().tolist()
+
+# Ensure top_site1 exists in the list, otherwise default to 0 (i.e., "Select Site")
+default_index1 = tenant_site_list.index(top_site1) if top_site1 in tenant_site_list else 0
+
+# Create the selectbox
+tenant_site_id = st.sidebar.selectbox("Tenant Site ID", tenant_site_list, index=default_index1)
+
+
+if site_id and site_id != "Select Site":
+    df = df[df["IHS Site ID"] == site_id]
+    pa_df = pa_df[pa_df["IHS Site ID"] == site_id]
 
 # ----------------------------
 # Simulated Data
@@ -180,12 +183,16 @@ themes = {"blues": "Blues", "reds": "Reds", "greens": "Greens"}
 # ----------------------------
 
 
-theme = "reds"
-year = "Daily"
+
+# Filter matching rows and extract the list
+matches = db_full.loc[db_full["IHS Site ID"] == site_id, "tenant_and_id"].dropna().tolist()
+
+# Join into a single string with hyphens
+tenant_str = " - ".join(matches) if matches else "-"
 
 
+st.subheader(f"{site_id} - Tenants ({tenant_str})")
 
-st.subheader(f"{site_id} - Tenants ({df.loc[df['IHS Site ID'] == site_id, 'Tenants On Site'].values[0]})")
 st.write(f"RTO ({df.loc[df['IHS Site ID'] == site_id, 'RTO Name'].values[0]})  \
          \t FSE ({df.loc[df['IHS Site ID'] == site_id, 'EFS Name'].values[0]})")
 
