@@ -22,7 +22,10 @@ def get_sheets(file):
 
     # --- Clean Outages ---
     # Remove duplicates based on "IHS Site ID"
-    db_full = db_init.copy()
+    db_full = db_init.copy()[[
+        "IHS Site ID", "Tenants On Site", "IHS Site Priority", "Zone", "Region",
+        "State", "EFS Name", "RTO Name", "Head, Field Service", "SBC", "Tenant Name", "Tenant ID",
+    ]]
 
     db_1 = db_full.copy()[[
         "IHS Site ID", "Tenants On Site", "IHS Site Priority", "Zone", "Region",
@@ -49,31 +52,10 @@ def get_sheets(file):
     df_init = df_init[df_init["Year"] == datetime.date.today().year]
 
     # --- Clean PA ---
-    # Check the columns in pa_init and determine the correct site ID column
-    possible_site_id_cols = ["Site ID", "IHS Site ID", "Site_ID", "SiteID"]
-    site_id_col = None
-    for col in possible_site_id_cols:
-        if col in pa_init.columns:
-            site_id_col = col
-            break
-    
-    if site_id_col is None:
-        st.error(f"No site ID column found in PA sheet. Available columns: {', '.join(pa_init.columns)}")
-        return None, None, None, None
-        
-    if site_id_col != "IHS Site ID":
-        pa_init = pa_init.rename(columns={site_id_col: "IHS Site ID"})
-    
-    # Get all date columns (exclude the site ID column)
-    date_columns = [col for col in pa_init.columns if col != "IHS Site ID"]
-    
-    try:
-        pa_init = pa_init.melt(id_vars=["IHS Site ID"], value_vars=date_columns, var_name="Date", value_name="PA")
-        pa_init["Date"] = pd.to_datetime(pa_init["Date"], format="%d/%m/%Y", errors="coerce").dt.date
-        pa_init["PA"] = pd.to_numeric(pa_init["PA"].replace("-", np.nan), errors="coerce").round(2)
-    except Exception as e:
-        st.error(f"Error processing PA data: {str(e)}")
-        return None, None, None, None
+    pa_init = pa_init.rename(columns={"Site ID": "IHS Site ID"})
+    pa_init = pa_init.melt(id_vars=["IHS Site ID"], var_name="Date", value_name="PA")
+    pa_init["Date"] = pd.to_datetime(pa_init["Date"], format="%d/%m/%Y", errors="coerce").dt.date
+    pa_init["PA"] = pd.to_numeric(pa_init["PA"].replace("-", np.nan), errors="coerce").round(2)
 
     # Downcast for memory efficiency
     pa_init["IHS Site ID"] = pa_init["IHS Site ID"].astype("category")
