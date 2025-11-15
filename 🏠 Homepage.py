@@ -11,9 +11,32 @@ import time
 import calendar
 
 import calcs
-from helper_functions import human_format, apply_filters
+from helper_functions import human_format, apply_filters, get_valid_date_range
 
 
+# if st.session_state.file_uploaded:
+#     df1 = st.session_state["df_init"]
+#     pa_df1 = st.session_state["pa_init"]
+#     db1 = st.session_state["db"]
+#     db_full1 = st.session_state["db_full"]
+    
+#     df = df1.copy()
+#     db = db1.copy()
+#     pa_df = pa_df1.copy()
+    
+#     # DEBUG: Check the data
+#     st.write("### DEBUG INFO")
+#     st.write("PA DataFrame shape:", pa_df.shape)
+#     st.write("PA Date column dtype:", pa_df["Date"].dtype)
+#     st.write("PA Date sample values:")
+#     st.write(pa_df["Date"].head(20))
+#     st.write("Number of NaT values:", pa_df["Date"].isna().sum())
+#     st.write("Number of valid dates:", pa_df["Date"].notna().sum())
+    
+#     st.write("\nDF DataFrame shape:", df.shape)
+#     st.write("DF Date column dtype:", df["Date"].dtype)
+#     st.write("DF Date sample values:")
+#     st.write(df["Date"].head(20))
 
 airtel_css = """
     <style>
@@ -32,6 +55,20 @@ mtn_css = """
             padding: 10px;
             border-radius: 8px;
         }
+    </style>
+"""
+
+show_sidebar = """
+    <style>
+        .stSidebar .st-emotion-cache-1m5fwvu .e6f82ta0 {
+            display: block;}
+    </style>
+"""
+
+hide_sidebar = """
+    <style>
+        .stSidebar .st-emotion-cache-1m5fwvu .e6f82ta0 {
+            display: none;}
     </style>
 """
 
@@ -60,6 +97,7 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
+    st.markdown(hide_sidebar, unsafe_allow_html=True)
     st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -73,6 +111,7 @@ if not st.session_state.logged_in:
             st.error("Wrong credentials")
 
 else:
+    st.markdown(show_sidebar, unsafe_allow_html=True)
     st.set_page_config(page_title="Performance Dashboard", page_icon="📊", layout="wide")
     st.subheader("📊 Performance Dashboard")
 
@@ -180,15 +219,15 @@ else:
             return week_counts['days_present'].eq(7).all()
 
 
-
+        # Sidebar: Date range input
         # Sidebar: Date range input
         st.sidebar.header("Filters")
 
-        # Ensure we have valid dates before creating the date input
-        pa_df["Date"] = pa_df["Date"].cat.as_ordered()
-
-        min_date = pa_df["Date"].min()
-        max_date = pa_df["Date"].max()
+        try:
+            min_date, max_date = get_valid_date_range(pa_df, "Date")
+        except ValueError as e:
+            st.error(str(e))
+            st.stop()
 
         date_range = st.sidebar.date_input(
             "Select date range",
@@ -203,15 +242,19 @@ else:
             start_date = min_date
             end_date = max_date
 
-        # ✅ Filter between start and end dates
+        # Filter between start and end dates
+        # Convert date objects to datetime for comparison
+        start_datetime = pd.to_datetime(start_date)
+        end_datetime = pd.to_datetime(end_date)
 
-        pa_df = pa_df[(pa_df["Date"] >= start_date) & (pa_df["Date"] <= end_date)]
-        df = df[(df["Date"] >= start_date) & (df["Date"] <= end_date)]
-        # pa_df = pd.merge(pa_df, db, on="IHS Site ID", how="left")
+        pa_df = pa_df[(pa_df["Date"] >= start_datetime) & 
+                    (pa_df["Date"] <= end_datetime)].copy()
+        df = df[(df["Date"] >= start_datetime) & 
+                (df["Date"] <= end_datetime)].copy()
 
         # Zone Filter
-        df = df[df["Zone"] == zone]
-        pa_df = pa_df[pa_df["Zone"] == zone]
+        df = df[df["Zone"] == zone].copy()
+        pa_df = pa_df[pa_df["Zone"] == zone].copy()
 
         # Customer Filter
         customer = st.sidebar.selectbox("Customer", ["Select Customer"] + CUSTOMERS)
@@ -269,95 +312,178 @@ else:
         col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
 
         # ----------------------------
-        # Metric Cards (Gains/Losses)
+        # Calculate Gains/Percentage Changes
         # ----------------------------
-        gains = [5,2]
+
+        # 1. OVERALL OUTAGE COUNT - No comparison needed for homepage, just show total
+        total_outage_count = sum(df["Outage Count"])
+        # Get all sites' outage counts
+        all_sites_outage_counts = df.groupby("IHS Site ID")["Outage Count"].sum()
+        avg_outage_all_sites = all_sites_outage_counts.mean()
+
+        # 2. WEEKLY OUTAGE COUNT GAIN (compared to previous week)
+        current_week_count = sum(df[df['Week'] == max_week]["Outage Count"])
+
+        # Handle week 1 - get last week of previous year
+        if max_week == 1:
+            prev_year = max_year - 1
+            prev_week_df = df[(df['Year'] == prev_year)]
+            if not prev_week_df.empty:
+                prev_week = prev_week_df['Week'].max()
+                prev_week_count = sum(df[(df['Year'] == prev_year) & (df['Week'] == prev_week)]["Outage Count"])
+            else:
+                prev_week_count = 0
+        else:
+            prev_week = max_week - 1
+            prev_week_count = sum(df[(df['Year'] == max_year) & (df['Week'] == prev_week)]["Outage Count"])
+
+        # Calculate percentage change (lower is better, so negative change is good)
+        if prev_week_count > 0:
+            weekly_outage_gain = ((current_week_count - prev_week_count) / prev_week_count) * 100
+        else:
+            weekly_outage_gain = 0 if current_week_count == 0 else 100
+
+        # 3. MONTHLY OUTAGE COUNT GAIN (compared to previous month)
+        current_month_count = sum(df[df['Month'] == calendar.month_name[max_month]]["Outage Count"])
+
+        # Handle January - get December of previous year
+        if max_month == 1:
+            prev_year = max_year - 1
+            prev_month = 12
+            prev_month_count = sum(df[(df['Year'] == prev_year) & (df['Month'] == calendar.month_name[prev_month])]["Outage Count"])
+        else:
+            prev_month = max_month - 1
+            prev_month_count = sum(df[(df['Year'] == max_year) & (df['Month'] == calendar.month_name[prev_month])]["Outage Count"])
+
+        # Calculate percentage change (lower is better, so negative is good)
+        if prev_month_count > 0:
+            monthly_outage_gain = ((current_month_count - prev_month_count) / prev_month_count) * 100
+        else:
+            monthly_outage_gain = 0 if current_month_count == 0 else 100
+
+        # 4. MONTHLY PA GAIN (compared to previous month)
+        pa_df_calc = pa_df.copy()
+        pa_df_calc['Datetime'] = pd.to_datetime(pa_df_calc['Date'], errors='coerce')
+        pa_df_calc['Year'] = pa_df_calc['Datetime'].dt.year
+        pa_df_calc['Month'] = pa_df_calc['Datetime'].dt.month
+
+        latest_year = pa_df_calc['Year'].max()
+        latest_month = pa_df_calc[pa_df_calc['Year'] == latest_year]['Month'].max()
+        latest_month_df = pa_df_calc[(pa_df_calc['Year'] == latest_year) & (pa_df_calc['Month'] == latest_month)]
+        monthly_avg_pa = pd.to_numeric(latest_month_df['PA'], errors='coerce').mean().round(2)
+
+        # Handle January - get December of previous year
+        if latest_month == 1:
+            prev_year_pa = latest_year - 1
+            prev_month_pa = 12
+            prev_month_df = pa_df_calc[(pa_df_calc['Year'] == prev_year_pa) & (pa_df_calc['Month'] == prev_month_pa)]
+        else:
+            prev_month_pa = latest_month - 1
+            prev_month_df = pa_df_calc[(pa_df_calc['Year'] == latest_year) & (pa_df_calc['Month'] == prev_month_pa)]
+
+        prev_monthly_avg_pa = pd.to_numeric(prev_month_df['PA'], errors='coerce').mean()
+
+        # Calculate percentage change (higher is better, so positive change is good)
+        if prev_monthly_avg_pa > 0 and not pd.isna(prev_monthly_avg_pa):
+            monthly_pa_gain = ((monthly_avg_pa - prev_monthly_avg_pa) / prev_monthly_avg_pa) * 100
+        else:
+            monthly_pa_gain = 0
+
+        # 5. WEEKLY PA GAIN (compared to previous week)
+        pa_df_calc['Week'] = pa_df_calc['Datetime'].dt.isocalendar().week
+        pa_df_calc['ISO_Year'] = pa_df_calc['Datetime'].dt.isocalendar().year
+
+        latest_iso_year = pa_df_calc['ISO_Year'].max()
+        latest_week = pa_df_calc[pa_df_calc['ISO_Year'] == latest_iso_year]['Week'].max()
+        latest_week_df = pa_df_calc[(pa_df_calc['ISO_Year'] == latest_iso_year) & (pa_df_calc['Week'] == latest_week)]
+        weekly_avg_pa = pd.to_numeric(latest_week_df['PA'], errors='coerce').mean().round(2)
+
+        # Handle week 1 - get last week of previous year
+        if latest_week == 1:
+            prev_iso_year = latest_iso_year - 1
+            prev_week_pa_df = pa_df_calc[pa_df_calc['ISO_Year'] == prev_iso_year]
+            if not prev_week_pa_df.empty:
+                prev_week_pa = prev_week_pa_df['Week'].max()
+                prev_week_df_pa = pa_df_calc[(pa_df_calc['ISO_Year'] == prev_iso_year) & (pa_df_calc['Week'] == prev_week_pa)]
+            else:
+                prev_week_df_pa = pd.DataFrame()
+        else:
+            prev_week_pa = latest_week - 1
+            prev_week_df_pa = pa_df_calc[(pa_df_calc['ISO_Year'] == latest_iso_year) & (pa_df_calc['Week'] == prev_week_pa)]
+
+        prev_weekly_avg_pa = pd.to_numeric(prev_week_df_pa['PA'], errors='coerce').mean()
+
+        # Calculate percentage change (higher is better, so positive change is good)
+        if prev_weekly_avg_pa > 0 and not pd.isna(prev_weekly_avg_pa):
+            weekly_pa_gain = ((weekly_avg_pa - prev_weekly_avg_pa) / prev_weekly_avg_pa) * 100
+        else:
+            weekly_pa_gain = 0
+
+        # ----------------------------
+        # Metric Cards with Calculated Gains
+        # ----------------------------
         with col1:
             with st.container(border=True):
-                st.metric(label="Outage Count", value=human_format(len(df)), delta=f"{gains[0]:,}")
+                st.metric(
+                    label="Outage Count", 
+                    value=human_format(total_outage_count), 
+                    delta=f"{avg_outage_all_sites:.2f}%",
+                    delta_color="inverse" if avg_outage_all_sites > 2 else "normal"  # Red for positive (bad), green for negative (good)
+                )
             
 
         # ----------------------------
         # Weekly
         # ----------------------------
         with col2:
-            percent_change = 0
             with st.container(border=True):
-                week_count = len(df[df['Week'] == max_week])
-                # if max_week == 1:
-                #     prev_week_count = 0
-                #     percent_change = 100
-                # else:
-                #     prev_week_count = len(df[df['Week'] == (max_week-1)])
-                #     percent_change = ((prev_week_count - week_count)/prev_week_count)*100
+                week_count = sum(df[df['Week'] == max_week]["Outage Count"])
                 if is_week_complete(df) == False:
-                    st.metric(label=f"⚠️ Week {max_week} Outage Count", value=human_format(week_count), delta=f"{round(percent_change, 2)}%")
+                    st.metric(
+                        label=f"⚠️ Week {max_week} Outage Count", 
+                        value=human_format(week_count), 
+                        delta=f"{weekly_outage_gain:.2f}%",
+                        delta_color="inverse"  # Red for positive (bad), green for negative (good)
+                    )
                 else:
-                    st.metric(label=f"Week {max_week} Outage Count", value=human_format(week_count), delta=f"{gains[1]:,}")
+                    st.metric(
+                        label=f"Week {max_week} Outage Count", 
+                        value=human_format(week_count), 
+                        delta=f"{weekly_outage_gain:.2f}%",
+                        delta_color="inverse"
+                    )
 
 
         # ----------------------------
         # Monthly
         # ----------------------------
         with col3:
-            percent_change = 0
             with st.container(border=True):
-                month_count = len(df[df['Month'] == calendar.month_name[max_month]])
-                if max_month == 1:
-                    prev_month_count = 0
-                else:
-                    prev_month_count = len(df[df['Month'] == calendar.month_name[(max_month - 1)]])
-
-                # Handle division by zero
-                # if prev_month_count > 0:
-                #     percent_change = ((month_count - prev_month_count) / prev_month_count) * 100
-                # else:
-                #     percent_change = 0
-
                 st.metric(
                     label=f"{calendar.month_name[max_month]} Outage Count",
-                    value=human_format(month_count),
-                    delta=f"{round(percent_change, 2)}%"
+                    value=human_format(current_month_count),
+                    delta=f"{monthly_outage_gain:.2f}%",
+                    delta_color="inverse"  # Red for positive (bad), green for negative (good)
                 )
 
         with col4:
             with st.container(border=True):
-                pa_df['Datetime'] = pd.to_datetime(pa_df['Date'], errors='coerce')
-
-                # Extract Year and Month
-                pa_df['Year'] = pa_df['Datetime'].dt.year
-                pa_df['Month'] = pa_df['Datetime'].dt.month
-
-                # Get most recent year and month
-                latest_year = pa_df['Year'].max()
-                latest_month = pa_df[pa_df['Year'] == latest_year]['Month'].max()
-
-                # Filter for that month
-                latest_month_df = pa_df[(pa_df['Year'] == latest_year) & (pa_df['Month'] == latest_month)]
-
-                # Compute average PA
-                monthly_avg_pa = pd.to_numeric(latest_month_df['PA'], errors='coerce').mean().round(2)
-
-                st.metric(label=f"{calendar.month_name[max_month]} PA", value=monthly_avg_pa, delta=f"{gains[0]:,}")
+                st.metric(
+                    label=f"{calendar.month_name[max_month]} PA", 
+                    value=f"{monthly_avg_pa:.2f}%" if not pd.isna(monthly_avg_pa) else "N/A", 
+                    delta=f"{monthly_pa_gain:.2f}%",
+                    delta_color="normal"  # Green for positive (good), red for negative (bad)
+                )
             
 
         with col5:
             with st.container(border=True):
-                # Extract ISO Year and Week
-                pa_df['Week'] = pa_df['Datetime'].dt.isocalendar().week
-                pa_df['ISO_Year'] = pa_df['Datetime'].dt.isocalendar().year
-
-                # Get most recent ISO year and week
-                latest_iso_year = pa_df['ISO_Year'].max()
-                latest_week = pa_df[pa_df['ISO_Year'] == latest_iso_year]['Week'].max()
-
-                # Filter for that week
-                latest_week_df = pa_df[(pa_df['ISO_Year'] == latest_iso_year) & (pa_df['Week'] == latest_week)]
-
-                # Compute average PA
-                weekly_avg_pa = pd.to_numeric(latest_week_df['PA'], errors='coerce').mean().round(2)
-
-                st.metric(label=f"Week {latest_week} PA", value=weekly_avg_pa, delta=f"{gains[0]:,}")
+                st.metric(
+                    label=f"Week {latest_week} PA", 
+                    value=f"{weekly_avg_pa:.2f}%" if not pd.isna(weekly_avg_pa) else "N/A", 
+                    delta=f"{weekly_pa_gain:.2f}%",
+                    delta_color="normal"  # Green for positive (good), red for negative (bad)
+                )
             
 
         chart_col1, chart_col2 = st.columns(2)
@@ -537,4 +663,4 @@ else:
 
 
 
-        
+

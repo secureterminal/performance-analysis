@@ -54,3 +54,33 @@ def human_format(num):
         return f"{num / 1_000:.2f}K"
     else:
         return f"{num:.0f}"
+
+
+
+def get_valid_date_range(df, date_column="Date"):
+    """
+    Get min and max dates from a dataframe, handling NaT values.
+    
+    Parameters:
+        df (pd.DataFrame): The input DataFrame
+        date_column (str): Name of the date column
+        
+    Returns:
+        tuple: (min_date, max_date) as date objects
+    """
+    # Remove NaT values
+    valid_dates = df[date_column].dropna()
+    
+    if valid_dates.empty:
+        raise ValueError(f"No valid dates found in column '{date_column}'")
+    
+    min_date = valid_dates.min()
+    max_date = valid_dates.max()
+    
+    # Convert to date objects if they're timestamps
+    if isinstance(min_date, pd.Timestamp):
+        min_date = min_date.date()
+    if isinstance(max_date, pd.Timestamp):
+        max_date = max_date.date()
+    
+    return min_date, max_date
