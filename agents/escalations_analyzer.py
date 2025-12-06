@@ -11,51 +11,75 @@ import numpy as np
 from datetime import datetime, timedelta
 import re
 import streamlit as st
+from dotenv import load_dotenv
 
 # AI Provider imports
 from groq import Groq
 import google.generativeai as genai
 from openai import OpenAI
 
+def get_secret(name: str):
+    """Return Streamlit secret if available, else environment variable."""
+    try:
+        if name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass  # st.secrets not available locally
 
+    return os.getenv(name)
 
 class EscalationAnalyzerAgent:
     """
     AI Agent for analyzing site outages and generating executive summaries
     Uses Groq → Gemini → OpenAI fallback chain
     """
-    
+
     def __init__(self):
-        """Initialize all AI clients"""
+        """Initialize all AI clients with cloud-first secret handling"""
+        
+        # ----------------------------
         # Groq (Primary)
+        # ----------------------------
+        groq_key = get_secret("GROQ_API_KEY")
         self.groq_client = None
-        if os.getenv("GROQ_API_KEY"):
+
+        if groq_key:
             try:
-                self.groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+                self.groq_client = Groq(api_key=groq_key)
             except Exception as e:
                 print(f"Groq initialization failed: {e}")
                 st.error(f"Groq initialization failed: {e}")
-        
+
+        # ----------------------------
         # Gemini (Secondary)
+        # ----------------------------
+        gemini_key = get_secret("GEMINI_API_KEY")
         self.gemini_client = None
-        if os.getenv("GEMINI_API_KEY"):
+
+        if gemini_key:
             try:
-                genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-                self.gemini_client = genai.GenerativeModel('gemini-1.5-flash')
+                genai.configure(api_key=gemini_key)
+                self.gemini_client = genai.GenerativeModel("gemini-1.5-flash")
             except Exception as e:
                 print(f"Gemini initialization failed: {e}")
                 st.error(f"Gemini initialization failed: {e}")
-        
+
+        # ----------------------------
         # OpenAI (Tertiary)
+        # ----------------------------
+        openai_key = get_secret("OPENAI_API_KEY")
         self.openai_client = None
-        if os.getenv("OPENAI_API_KEY"):
+
+        if openai_key:
             try:
-                self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                self.openai_client = OpenAI(api_key=openai_key)
             except Exception as e:
                 print(f"OpenAI initialization failed: {e}")
                 st.error(f"OpenAI initialization failed: {e}")
-        
+
+        # Track which provider is active
         self.current_provider = None
+
     
     def _call_llm(self, prompt: str, temperature: float = 0.3, max_tokens: int = 500) -> Optional[str]:
         """
