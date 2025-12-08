@@ -67,70 +67,10 @@ if uploaded_file is not None and not st.session_state.escalation_file_uploaded:
         try:
             # Read Excel file
             df_upload = pd.read_excel(uploaded_file, engine="openpyxl")
-            
-            # Validate file structure
-            # Placeholder for validation function
-            # In production, use: is_valid, message, cleaned_df = validate_excel_file(df_upload)
 
             is_valid, message, cleaned_df = validate_excel_file(df_upload)
             
-            # Simple validation for demo
-            # required_cols = ["Number", "Site ID", "Outage Start Time", "Primary Cause"]
-            # missing = [col for col in required_cols if col not in df_upload.columns]
-            
-            # if missing:
-            #     st.error(f"❌ Missing required columns: {', '.join(missing)}")
-            #     st.stop()
-            
-            # # Rename Site ID to IHS Site ID
-            # df_upload = df_upload.rename(columns={"Site ID": "IHS Site ID"})
-            
-            # # Remove null rows in critical fields
-            # critical_fields = ["Number", "IHS Site ID", "Outage Start Time", "Primary Cause"]
-            # initial_count = len(df_upload)
-            # df_upload = df_upload.dropna(subset=critical_fields)
-            # removed_null = initial_count - len(df_upload)
-            
-            # # Convert datetime
-            # df_upload["Outage Start Time"] = pd.to_datetime(df_upload["Outage Start Time"], errors="coerce")
-            # df_upload["Outage End Time"] = pd.to_datetime(df_upload["Outage End Time"], errors="coerce")
-            
-            # # Fill null end times
-            # max_end_time = df_upload["Outage End Time"].max()
-            # df_upload["Outage End Time"] = df_upload["Outage End Time"].fillna(max_end_time)
-            
-            # # Recalculate duration (End - Start)
-            # df_upload["Outage Duration"] = df_upload["Outage End Time"] - df_upload["Outage Start Time"]
-            
-            # # Remove negative durations
-            # df_upload = df_upload[df_upload["Outage Duration"] >= pd.Timedelta(0)]
-            
-            # # Sort by duration
-            # df_upload = df_upload.sort_values("Outage Duration", ascending=False)
-            
-            # # Handle duplicates - keep higher MTTR
-            # duplicate_log = []
-            # duplicates = df_upload[df_upload.duplicated(subset=["Number"], keep=False)]
-            
-            # if not duplicates.empty:
-            #     for number in duplicates["Number"].unique():
-            #         dup_rows = df_upload[df_upload["Number"] == number].sort_values("Outage Duration", ascending=False)
-            #         kept = dup_rows.iloc[0]
-            #         removed = dup_rows.iloc[1:]
-                    
-            #         for _, row in removed.iterrows():
-            #             duplicate_log.append({
-            #                 "Number": number,
-            #                 "IHS Site ID": row["IHS Site ID"],
-            #                 "Removed MTTR": str(row["Outage Duration"]),
-            #                 "Kept MTTR": str(kept["Outage Duration"]),
-            #                 "Reason": "Kept higher MTTR"
-            #             })
-                
-            #     df_upload = df_upload.drop_duplicates(subset=["Number"], keep="first")
-            
-            # df_upload = df_upload.reset_index(drop=True)
-            
+
             # Store in session state
             st.session_state.escalation_df = cleaned_df
             st.session_state.duplicate_log = message
@@ -376,7 +316,8 @@ if st.session_state.get("start_analysis", False):
                 "Major RCA": "-",
                 "Bucket": "TX Issue",
                 "What was done to close": "No outage data found",
-                "Extra Comments": "No outage records in specified period"
+                "Extra Comments": "No outage records in specified period",
+                "provider_used": "N/A"
             }
         else:
             # Get site details from db_full
@@ -432,7 +373,8 @@ if st.session_state.get("start_analysis", False):
                 "Major RCA": top_rcas,
                 "Bucket": "NR",  # AI would determine this
                 "What was done to close": f"{outage_count} outages resolved, {mttr_display} total downtime",
-                "Extra Comments": f"{res['detailed_comments'] if 'detailed_comments' in res else 'N/A'}"
+                "Extra Comments": f"{res['detailed_comments'] if 'detailed_comments' in res else 'N/A'}",
+                "provider_used": res.get("provider_used", "N/A")
             }
         
         results.append(result)

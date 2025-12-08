@@ -4,11 +4,11 @@ import datetime
 import numpy as np
 import streamlit as st
 
-@st.cache_data
-def get_sheets(file):
-    """Reads and preprocesses all relevant Excel sheets."""
+@st.cache_data(show_spinner=False)
+def get_sheets(file_path: str):
+    """Reads and preprocesses all relevant Excel sheets from a real file path."""
     sheets = pd.read_excel(
-        file,
+        file_path,  # Now it's a real path → 100% safe
         sheet_name=["outages", "db", "pa", "rna", "tch"],
         engine="openpyxl"
     )

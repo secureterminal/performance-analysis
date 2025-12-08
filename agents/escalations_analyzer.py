@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import re
 import streamlit as st
 from dotenv import load_dotenv
+from prompts.escalation_prompt import generate_analysis_prompt
 
 # AI Provider imports
 from groq import Groq
@@ -49,6 +50,14 @@ class EscalationAnalyzerAgent:
             except Exception as e:
                 print(f"Groq initialization failed: {e}")
                 st.error(f"Groq initialization failed: {e}")
+        
+        groq_key_2 = get_secret("GROQ_API_KEY_2")
+        if groq_key_2:
+            try:
+                self.groq_client = Groq(api_key=groq_key_2)
+            except Exception as e:
+                print(f"Groq2 initialization failed: {e}")
+                st.error(f"Groq2 initialization failed: {e}")
 
         # ----------------------------
         # Gemini (Secondary)
@@ -214,6 +223,9 @@ class EscalationAnalyzerAgent:
                 "provider_used": "Groq/Gemini/OpenAI"
             }
         """
+        # filter out "Short Duration Outage (SDO)" from Primary RCA
+        site_outages_df = site_outages_df[site_outages_df["Primary Cause"] != "Short Duration Outage (SDO)"]
+        site_outages_df = site_outages_df[site_outages_df["RCA 3"] != "ACDG - Generator Faulty"]
         
         if site_outages_df.empty:
             return {
@@ -242,53 +254,65 @@ class EscalationAnalyzerAgent:
         rca_breakdown = rca_breakdown.sort_values("Count", ascending=False).head(10)
         
         # Get resolution comments (unique, non-null)
-        resolution_comments = site_outages_df["Resolution Comments"].dropna().unique()[:10]
-        resolution_notes = site_outages_df["Resolution notes"].dropna().unique()[:10]
+        resolution_comments = site_outages_df["Resolution Comments"].dropna().unique()[:20]
+        resolution_notes = site_outages_df["Resolution notes"].dropna().unique()[:20]
         
         # Build prompt
-        prompt = f"""Analyze these outages for site {ihs_site_id}:
+        prompt = generate_analysis_prompt(
+            ihs_site_id=ihs_site_id,
+            site_outages_df=site_outages_df,
+            total_outages=total_outages,
+            duration_hours=duration_hours,
+            rca_breakdown=rca_breakdown,
+            resolution_comments=resolution_comments,
+            resolution_notes=resolution_notes
+        )
 
-            STATISTICS:
-            - Total Outages: {total_outages}
-            - Total Downtime: {duration_hours:.2f} hours
-            - Date Range: {site_outages_df['Outage Start Time'].min()} to {site_outages_df['Outage Start Time'].max()}
+        # prompt = f"""Analyze these outages for site {ihs_site_id}:
 
-            TOP RCA BREAKDOWN:
-            {rca_breakdown.to_string(index=False)}
+        #     STATISTICS:
+        #     - Total Outages: {total_outages}
+        #     - Total Downtime: {duration_hours:.2f} hours
+        #     - Date Range: {site_outages_df['Outage Start Time'].min()} to {site_outages_df['Outage Start Time'].max()}
 
-            RESOLUTION COMMENTS:
-            {chr(10).join(resolution_comments[:5])}
+        #     TOP RCA BREAKDOWN:
+        #     {rca_breakdown.to_string(index=False)}
 
-            RESOLUTION NOTES:
-            {chr(10).join(resolution_notes[:5])}
+        #     RESOLUTION COMMENTS:
+        #     {chr(10).join(resolution_comments[:5])}
 
-            INSTRUCTIONS:
-            1. Create a BRIEF 30-word summary focusing on MTTR and RCA counts
-            2. Create a DETAILED 60-word summary of what was done to close issues
-            3. Assign ONE bucket: Infra, NR, Diesel, Security, Legal, TX Issue, or Active
+        #     RESOLUTION NOTES:
+        #     {chr(10).join(resolution_notes[:5])}
 
-            BUCKET DEFINITIONS:
-            - Infra: Asset replacements (DG, rectifier, batteries/BUB, shelters, AC units, inverters, etc.)
-            - NR: Non-routine faults, part replacements (injector, solenoid, alternator, cables, etc.)
-            - Diesel: Diesel outage, blocked fuel line, diesel quality, water ingress to diesel
-            - Security: Theft, vandalism, access issues, security concerns
-            - Legal: Land/lease issues, community demands, legal disputes
-            - TX Issue/Active: Customer equipment, transmission issues (not IHS responsibility)
+        #     INSTRUCTIONS:
+        #     1. Create a BRIEF 30-word summary focusing on MTTR and RCA counts
+        #     2. Create a DETAILED 60-word summary of what was done to close issues
+        #     3. Assign ONE bucket: Infra, NR, Diesel, Security, Legal, TX Issue, or Active
 
-            STYLE RULES:
-            - Be CONCISE - no verbose phrases like "No diesel outage after validation"
-            - Use abridged language: "Community access resolved, DG powered" not "IHS FSE confirmed access issue due to community demands not met, DG was powered manually" or
-                "Community access resolved, Injector serviced" not "IHS FSE confirmed access issue due to community demands not met, Injector was serviced and DG powered"
-            - Separate multiple RCAs with " | " 
-            - Focus on actionable issues and resolutions
-            - Prioritize high-impact issues (long duration) over frequent minor ones
+        #     BUCKET DEFINITIONS:
+        #     - Infra: Asset replacements (DG, rectifier, batteries/BUB, shelters, AC units, inverters, etc.)
+        #     - NR: Non-routine faults, part replacements (injector, solenoid, alternator, cables, etc.)
+        #     - Diesel: Diesel outage, blocked fuel line, diesel quality, water ingress to diesel
+        #     - Security: Theft, vandalism, access issues, security concerns
+        #     - Legal: Land/lease issues, community demands, legal disputes
+        #     - TX Issue/Active: Customer equipment, transmission issues (not IHS responsibility)
 
-            Return ONLY a JSON object:
-            {{
-                "summary": "30-word brief summary here",
-                "detailed_comments": "60-word detailed summary here",
-                "bucket": "bucket_name_here"
-            }}"""
+        #     STYLE RULES:
+        #     - Be CONCISE - no verbose phrases like "No diesel outage after validation"
+        #     - Use abridged language: "Community access resolved, DG powered" not "IHS FSE confirmed access issue due to community demands not met, DG was powered manually" or
+        #         "Community access resolved, Injector serviced" not "IHS FSE confirmed access issue due to community demands not met, Injector was serviced and DG powered"
+        #     - Separate multiple RCAs with " | " 
+        #     - Focus on actionable issues and resolutions
+        #     - Prioritize high-impact issues (long duration) over frequent minor ones
+        #     - For messages such as "DG was powered manually", just add "DG powered" to the summary
+        #     - Always state what was repairs/replaced
+
+        #     Return ONLY a JSON object:
+        #     {{
+        #         "summary": "30-word brief summary here",
+        #         "detailed_comments": "60-word detailed summary here",
+        #         "bucket": "bucket_name_here"
+        #     }}"""
         
         # Call LLM
         response = self._call_llm(prompt, temperature=0.3, max_tokens=400)
