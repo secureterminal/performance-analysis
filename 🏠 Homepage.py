@@ -54,7 +54,7 @@ PASSWORD_HASH = "@cwLwNA945nNShp@cwLwNA945nNShp"
 def init_session_state():
     """Initialize all session state variables once"""
     defaults = {
-        "logged_in": True,  # Set to False for production
+        "logged_in": False,  # Set to False for production
         "file_uploaded": False,
         "file": None,
         "page": "home",

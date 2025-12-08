@@ -21,7 +21,7 @@ db_full1 = st.session_state["db_full"]
 
 
 # Create three columns
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 # ==========================================
 # COLUMN 1: WEEKLY OUTAGE PROCESSOR
@@ -46,6 +46,14 @@ with col1:
             min_value=1,
             max_value=53,
             value=datetime.today().isocalendar()[1] - 1,
+            help="Week number for the output file"
+        )
+
+        target_hours = st.number_input(
+            "Target Hours",
+            min_value=1,
+            max_value=24,
+            value=3,
             help="Week number for the output file"
         )
         
@@ -149,8 +157,8 @@ with col1:
                         # Last day of selected week (Sunday)
                         end_date = datetime.fromisocalendar(max_year, week_number, 7) + timedelta(days=1)
 
-                        st.write(start_of_week)
-                        st.write(end_date)
+                        st.write(f"First Day of week: {start_of_week}")
+                        st.write(f"Last Day of week: {end_date}")
 
                         # today = datetime.today()
                         # start_of_current_week = today - timedelta(days=today.weekday())
@@ -272,7 +280,7 @@ with col1:
 # COLUMN 2: PLACEHOLDER FOR REPORT 2
 # ==========================================
 with col2:
-    st.subheader("📈 Regional Impact Analysis")
+    st.subheader("📈 Regional Impact")
     
     with st.container(border=True):
         # Auto-run when Column 1 completes OR manually check
@@ -311,21 +319,21 @@ with col2:
                                 # Access Issues
                                 access_denial = region_df[
                                     (region_df['Primary Cause'] == 'Access Denial') &
-                                    (region_df['Outage Duration Hours'] > 3)
+                                    (region_df['Outage Duration Hours'] > target_hours)
                                 ]
                                 access_issues = ', '.join(access_denial['MTN ID'].dropna().astype(str).unique())
                                 if len(access_denial) > 0:
-                                    feedback_list_access = access_denial[['MTN ID', 'Site ID', 'MTN Region', 'RCA 1', 'Resolution Comments', 'Outage Duration']]
+                                    feedback_list_access = access_denial[['MTN ID', 'Site ID', 'MTN Region', 'Outage Duration', 'RCA 1', 'Resolution Comments']]
                                     region_feedback_dfs.append(feedback_list_access)
                                 
                                 # Theft and Vandalism
                                 theft = region_df[
                                     (region_df['Primary Cause'] == 'Site Asset Theft') &
-                                    (region_df['Outage Duration Hours'] > 3)
+                                    (region_df['Outage Duration Hours'] > target_hours)
                                 ]
                                 theft_vandalism = ', '.join(theft['MTN ID'].dropna().astype(str).unique())
                                 if len(theft) > 0:
-                                    feedback_list_theft = theft[['MTN ID', 'Site ID', 'MTN Region', 'RCA 1', 'Resolution Comments', 'Outage Duration']]
+                                    feedback_list_theft = theft[['MTN ID', 'Site ID', 'MTN Region', 'Outage Duration', 'RCA 1', 'Resolution Comments']]
                                     region_feedback_dfs.append(feedback_list_theft)
                                 
                                 # Major DG Faults (using RCA 2)
@@ -335,7 +343,7 @@ with col2:
                                     ].sort_values('Outage Duration Hours', ascending=False)
                                     major_dg = ', '.join(dg_faults['MTN ID'].dropna().astype(str).unique()[:5])
                                     if len(dg_faults) > 0:
-                                        feedback_list_dg = dg_faults[['MTN ID', 'Site ID', 'MTN Region', 'RCA 1', 'Resolution Comments', 'Outage Duration']].head(5)
+                                        feedback_list_dg = dg_faults[['MTN ID', 'Site ID', 'MTN Region', 'Outage Duration', 'RCA 1', 'Resolution Comments']].head(5)
                                         region_feedback_dfs.append(feedback_list_dg)
                                 else:
                                     major_dg = "N/A"
@@ -421,9 +429,9 @@ with col2:
                                 st.metric("IBD Issues", len(ibd_df))
                             
                             # Show preview of issues
-                            if len(conc_df) > 0:
-                                st.write("**Critical Issues Preview:**")
-                                st.dataframe(conc_df.head(5), use_container_width=True)
+                            # if len(conc_df) > 0:
+                            #     st.write("**Critical Issues Preview:**")
+                            #     st.dataframe(conc_df.head(5), use_container_width=True)
                     else:
                         st.warning("⚠️ MTN Region column not found in processed data")
                         
@@ -456,18 +464,169 @@ with col2:
             )
 
 
-# ==========================================
-# COLUMN 3: PLACEHOLDER FOR REPORT 3
-# ==========================================
-with col3:
-    st.subheader("📊 Report 3")
+# # Create three columns
+# col1_1 = st.columns(1)
+# # ==========================================
+# # COLUMN 3: PLACEHOLDER FOR REPORT 1_1
+# # ==========================================
+# with col1_1:
+st.subheader("🔧 Maintenance Vendor Analysis")
+
+with st.container(border=True):
+    # Check if processed outages exist
+    if 'processed_outages' not in st.session_state:
+        st.info("⏳ Please process outages in Column 1 first")
+    else:
+        try:
+            with st.spinner("Analyzing vendor performance..."):
+                # Load processed data
+                df = st.session_state['processed_outages'].copy()
+                
+                # Filter for MTN regions
+                if 'MTN Region' in df.columns and 'Maintenance Vendor' in df.columns:
+                    df_mtn = df[df['MTN Region'].isin(['ASB', 'IBD'])]
+                    
+                    if len(df_mtn) == 0:
+                        st.warning("⚠️ No data found for ASB or IBD regions")
+                    else:
+                        def create_vendor_rca_table(region_df, region_name):
+                            """Create a pivot table showing vendors vs top 5 RCAs"""
+                            
+                            if len(region_df) == 0:
+                                st.info(f"No data available for {region_name}")
+                                return None
+                            
+                            # Get top 5 RCAs for this region
+                            if 'RCA 3' in region_df.columns:
+                                rca_df = region_df[region_df['RCA 3'] != "No Intervention"]
+                                top_rcas = rca_df['RCA 3'].value_counts().head(5).index.tolist()
+                                
+                                # Create pivot table
+                                vendor_rca_data = []
+                                
+                                vendors = rca_df['Maintenance Vendor'].dropna().unique()
+                                
+                                for vendor in vendors:
+                                    vendor_df = rca_df[rca_df['Maintenance Vendor'] == vendor]
+                                    row_data = {'Vendor': vendor}
+                                    
+                                    # Count occurrences of each top RCA for this vendor
+                                    for rca in top_rcas:
+                                        count = len(vendor_df[vendor_df['RCA 3'] == rca])
+                                        row_data[rca] = count
+                                    
+                                    # Add total column
+                                    row_data['Total'] = len(vendor_df)
+                                    vendor_rca_data.append(row_data)
+                                
+                                # Create DataFrame
+                                vendor_table = pd.DataFrame(vendor_rca_data)
+                                
+                                # Sort by Total descending
+                                vendor_table = vendor_table.sort_values('Total', ascending=False)
+                                
+                                return vendor_table, top_rcas
+                            else:
+                                st.warning(f"RCA 1 column not found for {region_name}")
+                                return None
+                        
+                        # Process ASB Region
+                        st.write("### 📍 ASABA (ASB) Region")
+                        asb_df = df_mtn[df_mtn['MTN Region'] == 'ASB'].copy()
+                        
+                        asb_result = create_vendor_rca_table(asb_df, "ASB")
+                        
+                        if asb_result:
+                            asb_table, asb_rcas = asb_result
+                            
+                            # Display metrics
+                            col_a, col_b, col_c = st.columns(3)
+                            with col_a:
+                                st.metric("Total Vendors", len(asb_table))
+                            with col_b:
+                                st.metric("Total Outages", asb_table['Total'].sum())
+                            with col_c:
+                                if len(asb_table) > 0:
+                                    st.metric("Worst Vendor", asb_table.iloc[0]['Vendor'][:15] + "...")
+                            
+                            # Display table
+                            st.dataframe(
+                                asb_table.style.background_gradient(
+                                    subset=[col for col in asb_table.columns if col not in ['Vendor']],
+                                    cmap='Reds'
+                                ),
+                                use_container_width=True,
+                                height=300
+                            )
+                            
+                            # Store in session state
+                            st.session_state['asb_vendor_table'] = asb_table
+                        
+                        st.write("---")
+                        
+                        # Process IBD Region
+                        st.write("### 📍 IBADAN (IBD) Region")
+                        ibd_df = df_mtn[df_mtn['MTN Region'] == 'IBD'].copy()
+                        
+                        ibd_result = create_vendor_rca_table(ibd_df, "IBD")
+                        
+                        if ibd_result:
+                            ibd_table, ibd_rcas = ibd_result
+                            
+                            # Display metrics
+                            col_a, col_b, col_c = st.columns(3)
+                            with col_a:
+                                st.metric("Total Vendors", len(ibd_table))
+                            with col_b:
+                                st.metric("Total Outages", ibd_table['Total'].sum())
+                            with col_c:
+                                if len(ibd_table) > 0:
+                                    st.metric("Worst Vendor", ibd_table.iloc[0]['Vendor'][:15] + "...")
+                            
+                            # Display table
+                            st.dataframe(
+                                ibd_table.style.background_gradient(
+                                    subset=[col for col in ibd_table.columns if col not in ['Vendor']],
+                                    cmap='Reds'
+                                ),
+                                use_container_width=True,
+                                height=300
+                            )
+                            
+                            # Store in session state
+                            st.session_state['ibd_vendor_table'] = ibd_table
+                        
+                        st.success("✅ Vendor analysis complete!")
+                else:
+                    st.warning("⚠️ Required columns (MTN Region, Maintenance Vendor) not found")
+                    
+        except Exception as e:
+            st.error(f"❌ Error analyzing vendors: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
     
-    with st.container(border=True):
-        st.info("🚧 Report module coming soon...")
-        st.write("This section will contain the third reporting functionality.")
+    # Download button for vendor analysis
+    if 'asb_vendor_table' in st.session_state or 'ibd_vendor_table' in st.session_state:
+        st.write("---")
+        st.write("**Download Vendor Analysis**")
         
-        # Placeholder content
-        st.write("**Features:**")
-        st.write("- Feature 1")
-        st.write("- Feature 2")
-        st.write("- Feature 3")
+        # Create Excel file with both sheets
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            if 'asb_vendor_table' in st.session_state:
+                st.session_state['asb_vendor_table'].to_excel(writer, index=False, sheet_name='ASB Vendors')
+            if 'ibd_vendor_table' in st.session_state:
+                st.session_state['ibd_vendor_table'].to_excel(writer, index=False, sheet_name='IBD Vendors')
+        output.seek(0)
+        
+        # Generate filename
+        week_num = st.session_state.get('processed_week_number', 'XX')
+        filename = f"Week {week_num} Vendor Analysis.xlsx"
+        
+        st.download_button(
+            label=f"📥 Download {filename}",
+            data=output,
+            file_name=filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
