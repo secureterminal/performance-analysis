@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import io
+import re
 
 st.set_page_config(page_title="Reports", page_icon="📊", layout="wide")
 
@@ -54,7 +55,7 @@ with col1:
             min_value=1,
             max_value=24,
             value=3,
-            help="Week number for the output file"
+            help="Target hours threshold for filtering"
         )
         
         # Process button
@@ -70,6 +71,9 @@ with col1:
                         # Change column name for IHS Site Name to IHS Site ID
                         if 'IHS Site Name' in outages_df.columns:
                             outages_df = outages_df.rename(columns={'IHS Site Name': 'IHS Site ID'})
+
+                            # Exclude No Intervention
+                            outages_df = outages_df[outages_df['RCA 3'] != "No Intervention"].copy()
 
                         # Prepare MTN and Airtel DataFrames from db_full
                         mtn_df = db_full1[db_full1["Tenant Name"] == "MTN NG"].copy()
@@ -87,14 +91,13 @@ with col1:
                             'Tenant ID': 'Airtel ID'
                         })
                         
-                        # Step 4: Initialize customer columns (will be overwritten by merge)
+                        # Step 4: Initialize customer columns
                         outages_df['MTN ID'] = ""
                         outages_df['MTN Region'] = ""
                         outages_df['Airtel ID'] = ""
                         outages_df['Airtel Region'] = ""
                         
                         # Step 5: Perform merges
-                        # First merge with MTN data
                         outages_df = outages_df.merge(
                             mtn_df[['IHS Site ID', 'MTN ID', 'MTN Region']], 
                             on='IHS Site ID', 
@@ -102,7 +105,6 @@ with col1:
                             suffixes=('', '_mtn')
                         )
                         
-                        # Second merge with Airtel data
                         outages_df = outages_df.merge(
                             airtel_df[['IHS Site ID', 'Airtel ID', 'Airtel Region']], 
                             on='IHS Site ID', 
@@ -110,8 +112,7 @@ with col1:
                             suffixes=('', '_airtel')
                         )
                         
-                        # Handle the merged columns - consolidate duplicates
-                        # For MTN columns
+                        # Handle merged columns
                         if 'MTN ID_mtn' in outages_df.columns:
                             outages_df['MTN ID'] = outages_df['MTN ID_mtn'].fillna(outages_df['MTN ID']).fillna("-")
                             outages_df = outages_df.drop(columns=['MTN ID_mtn'])
@@ -124,7 +125,6 @@ with col1:
                         else:
                             outages_df['MTN Region'] = outages_df['MTN Region'].fillna("-")
                         
-                        # For Airtel columns
                         if 'Airtel ID_airtel' in outages_df.columns:
                             outages_df['Airtel ID'] = outages_df['Airtel ID_airtel'].fillna(outages_df['Airtel ID']).fillna("-")
                             outages_df = outages_df.drop(columns=['Airtel ID_airtel'])
@@ -137,7 +137,7 @@ with col1:
                         else:
                             outages_df['Airtel Region'] = outages_df['Airtel Region'].fillna("-")
                         
-                        # Now rename Airtel columns to AIRTEL for consistency with output
+                        # Rename to AIRTEL
                         outages_df = outages_df.rename(columns={
                             'Airtel ID': 'AIRTEL ID',
                             'Airtel Region': 'AIRTEL Region'
@@ -148,44 +148,29 @@ with col1:
                             outages_df = outages_df[outages_df['Site ID'] != "-"]
                         
                         # Step 7: Calculate time boundaries
-
                         max_year = outages_df['Outage Start Time'].dropna().dt.year.max()
-
-                        # First day of selected week (Monday)
                         start_of_week = datetime.fromisocalendar(max_year, week_number, 1)
-
-                        # Last day of selected week (Sunday)
                         end_date = datetime.fromisocalendar(max_year, week_number, 7) + timedelta(days=1)
 
                         st.write(f"First Day of week: {start_of_week}")
                         st.write(f"Last Day of week: {end_date}")
-
-                        # today = datetime.today()
-                        # start_of_current_week = today - timedelta(days=today.weekday())
-                        # start_of_current_week = start_of_current_week.replace(hour=0, minute=0, second=0, microsecond=0)
-                        # start_of_week = start_of_current_week - timedelta(weeks=1)
-                        # end_date = start_of_current_week
                         
-                        # Step 8: Handle ongoing outages
+                        # Step 8-12: Handle outage times
                         if 'Outage End Time' in outages_df.columns:
                             outages_df['Outage End Time'] = pd.to_datetime(outages_df['Outage End Time'], errors='coerce')
                             outages_df['Outage End Time'] = outages_df['Outage End Time'].fillna(end_date)
                         
-                        # Step 9: Remove future outages
                         if 'Outage Start Time' in outages_df.columns:
                             outages_df['Outage Start Time'] = pd.to_datetime(outages_df['Outage Start Time'], errors='coerce')
                             outages_df = outages_df[outages_df['Outage Start Time'] <= end_date]
                         
-                        # Step 10: Remove old outages
                         if 'Outage End Time' in outages_df.columns:
                             outages_df = outages_df[outages_df['Outage End Time'] >= start_of_week]
                         
-                        # Step 11: Trim start times
                         if 'Outage Start Time' in outages_df.columns:
                             mask = (outages_df['Outage Start Time'] < start_of_week)
                             outages_df.loc[mask, 'Outage Start Time'] = start_of_week
                         
-                        # Step 12: Trim end times
                         if 'Outage End Time' in outages_df.columns:
                             outages_df.loc[outages_df['Outage End Time'] > end_date, 'Outage End Time'] = end_date
                         
@@ -204,7 +189,7 @@ with col1:
                         if 'Outage Duration' in outages_df.columns:
                             outages_df = outages_df.sort_values(by='Outage Duration', ascending=False)
                         
-                        # Step 16: Select columns (only those that exist)
+                        # Step 16: Select columns
                         columns_to_select = [
                             'Number', 'Incident State', 'Incident Type', 'Incident Priority',
                             'Site ID', 'MTN ID', 'MTN Region', 'Region / Province',
@@ -222,13 +207,271 @@ with col1:
                             'Resolution Comments', 'Resolution notes'
                         ]
                         
-                        # Filter to only include columns that exist in the dataframe
                         existing_columns = [col for col in columns_to_select if col in outages_df.columns]
                         outages_df = outages_df[existing_columns]
+                        
+                        # ===== RCA MAPPING AND SITE ANALYSIS =====
+                        st.info("🔄 Processing RCA mapping...")
+                        
+                        # Define RCA mapping
+                        rca_mapping = {
+                            'Power Provided By 3RD Party': '3rd Party',
+                            'Access Issue - Environmental Conditions': 'Access issue',
+                            'Access - Time Restriction/Pre-Approval': 'Access issue',
+                            'Access Issue - Regulatory Concerns': 'Access issue',
+                            'DCDG - Actuator': 'Actuator was worked on',
+                            'Rectifier Module Overloaded': 'Additional module added',
+                            'ACDG - Air Intake': 'Airlock in fuel line',
+                            'ATS-AMF Hanged': 'ATS contactor energized',
+                            'DCDG - AVR': 'AVR worked on',
+                            'ACDG - Injector Pump': 'Bad Injector Pump',
+                            'ACDG - Fuel Injection Pump Calibration': 'Bad Injector Pump',
+                            'Fuel Line Issue': 'Blocked fuel line',
+                            'Water Separator Blockage': 'Blocked water separator',
+                            'Faulty Circuit Breaker': 'Breaker was replaced',
+                            'BTS Breaker Faulty': 'Breaker was replaced',
+                            'BTS Breaker Tripped': 'Breaker was replaced',
+                            'Rectifier Battery': 'BUB issue',
+                            'Backup Batteries': 'BUB issue',
+                            'DCDG - Charging Alternator': 'Charging alternator excited',
+                            'DCGG - Charging Alternator': 'Charging alternator excited',
+                            'ACDG - Charging Alternator Carbon Brush Faulty': 'Charging alternator excited',
+                            'Access Issue - Security Guard Salary': 'CLO access issue',
+                            'Access Issue - Community': 'Community access issue',
+                            'Generator Battery Theft': 'Crank battery theft',
+                            'Panel Distribution Board': 'Breaker was replaced',
+                            'DC Cable Stolen': 'DC Cable Stolen',
+                            'ACDG - Compression': 'DG Compression',
+                            'DCDG - Compression': 'DG Compression',
+                            'ACDG - Control Panel': 'DG control panel',
+                            'ACDG - Crankshaft': 'DG crankshaft',
+                            'DG Distribution Board': 'DG distribution board issue',
+                            'ACDG - Emergency Stop Switch': 'DG emergency stop switch worked on',
+                            'ACDG - Exhaust': 'DG exhaust fixed',
+                            'ACDG - Generator Faulty': 'DG Fault',
+                            'ACDG - Unexpected Shutdown': 'DG fault',
+                            'DCDG - Fuse': 'DG fuse replaced',
+                            'ACDG - Governor': 'DG Governor adjusted',
+                            'ACDG - Over Speed': 'DG governor adjusted',
+                            'ACDG - Under Frequency': 'DG governor adjusted',
+                            'ACDG - Under Voltage': 'DG Governor adjusted',
+                            'DCDG - Governor': 'DG governor adjusted',
+                            'ACDG - Over Frequency': 'DG governor adjusted',
+                            'ACDG - Over Voltage': 'DG governor adjusted',
+                            'ACDG - Under Speed': 'DG governor adjusted',
+                            'ACDG - High Engine Temp - Coolant Level Issue': 'DG high temperature',
+                            'ACDG - Radiator': 'DG high temperature',
+                            'ACDG - High Engine Temp - Clogged Radiator': 'DG high temperature',
+                            'ACDG - High Engine Temp - Radiator Leakage': 'DG high temperature',
+                            'Gen Temp High': 'DG high temperature',
+                            'ACDG - Load Unbalanced': 'DG load balancing done',
+                            'ACDG - Low Oil Pressure': 'DG low oil pressure',
+                            'Site Down - Low Voltage': 'DG low voltage',
+                            'ACDG - Oil Leakage': 'DG oil leakage',
+                            'ACDG - Overload': 'DG Overload',
+                            'ACDG - Push Rod': 'DG push rod',
+                            'ACDG - Solenoid Coil': 'DG solenoid worked on',
+                            'DG Theft': 'DG Theft',
+                            'DCGG - Gen Voltage': 'DG voltage alarm cleared',
+                            'Diesel Top-Up': 'Diesel outage',
+                            'Diesel Outage': 'Diesel outage',
+                            'Diesel Quality': 'Diesel quality',
+                            'Diesel Theft': 'Diesel Theft',
+                            'ACDG - Fan Belt': 'Fan belt swapped',
+                            'DCGG - Fan Belt Issue': 'Fan belt swapped',
+                            'Aircon Condenser Fan Motor Faulty': 'Faulty AC',
+                            'Aircon Compressor High Temp': 'Faulty AC',
+                            'Aircon Switch Faulty': 'Faulty AC',
+                            'Armoured Cable': 'Faulty armoured cable',
+                            'ATS-AMF Issue': 'Faulty ATS worked on',
+                            'ATS Relay Faulty': 'Faulty ATS worked on',
+                            'ACDG - AVR': 'Faulty AVR worked on',
+                            'DCGG - Avr Output/Settings': 'Faulty AVR worked on',
+                            'ACDG - Auxiliary Faulty': 'Faulty AVR worked on',
+                            'ACDG - Charging Alternator': 'Charging alternator excited',
+                            'ACDG - Interface Module Faulty': 'Faulty DG module worked on',
+                            'ACDG - Relay Faulty': 'Relay was replaced',
+                            'ACDG - Temperature Sensor Switch': 'Faulty DG thermostat replaced',
+                            'ACDG - Emergency Stop': 'Faulty emergency stop switch',
+                            'DCGG - Expansion Board Error': 'Faulty expansion board worked on',
+                            'ACDG - Fuel Lifting Pump Faulty': 'Faulty fuel pump',
+                            'DCDG - Fuel Pump': 'Faulty fuel pump',
+                            'ACDG - Fuel Pump': 'Faulty fuel pump',
+                            'ACDG - Priming Motor Faulty': 'Faulty hand primer worked on',
+                            'ACDG - Kick Starter': 'Faulty kickstarter',
+                            'ACDG - Lift Pump': 'Faulty Lift Pump',
+                            'ACDG - Load Contactor': 'Faulty load contactor',
+                            'ACDG - Oil Seal': 'Faulty oil seal',
+                            'ACDG - Oil Pressure Sensor Faulty': 'Faulty oil sensor switch worked on',
+                            'ACDG - Oil Sensor Switch': 'Faulty oil sensor switch worked on',
+                            'Rectifier Cabinet': 'Faulty rectifier cabinet',
+                            'Rectifier Module': 'Faulty rectifier module',
+                            'ACDG - Rotor Head': 'Faulty rotor head',
+                            'ACDG - Water Pump': 'Faulty water pump',
+                            'DCDG - Water Pump': 'Faulty water pump',
+                            'DCGG - Faulty/Burnt Breaker': 'Breaker was replaced',
+                            'ACDG - Load Breaker': 'Breaker was replaced',
+                            'DCDG - Load Breaker': 'Breaker was replaced',
+                            'Rectifier - Circuit Breaker': 'Breaker was replaced',
+                            'ACDG - Main Breaker Tripped': 'Breaker was replaced',
+                            'Circuit Breaker Tripped': 'Breaker was replaced',
+                            'AC Breaker Tripped': 'Breaker was replaced',
+                            'AC Breaker Faulty': 'Breaker was replaced',
+                            'ACDG - Fuel Filter': 'Fuel filter replaced',
+                            'DCDG - Fuel Filter': 'Fuel filter replaced',
+                            'DCGG - Avr Burnt Fuse/Avr Issue': 'Gen fuse worked on',
+                            'DCGG - Control Module': 'GG control module worked on',
+                            'DCGG - Gen Current': 'GG current adjusted',
+                            'DCGG - Faulty Engine Harness': 'GG faulty harness cable',
+                            'DCGG - Start Failure': 'GG start failure alarm',
+                            'National Grid - Grid Incomplete Phase': 'Grid incomplete phase',
+                            'National Grid - Low Current Supply': 'Grid low current',
+                            'National Grid - Grid Outage Issue': 'Grid outage',
+                            'DCGG - Gas Flow': 'High pressure regulator worked on',
+                            'Hybrid Software': 'Hybrid failure',
+                            'Hybrid Module': 'Hybrid failure',
+                            'E-Site Comm Failure': 'Hybrid failure',
+                            'Access Issue - Land Lord': 'Landlord access issue',
+                            'DCGG - Load Cable': 'Load cable was worked on',
+                            'DCDG - Logic Board': 'Logic board worked on',
+                            'DCGG - Low Oil Pressure': 'Low oil pressure',
+                            'DCDG - Low Oil Pressure': 'Low oil pressure',
+                            'ACDG - Main Alternator': 'Main Alternator Issue',
+                            'ACDG - Oil Pump': 'Oil pump replaced',
+                            'Planned Activity - Passive': 'Passive planned activity',
+                            'Installation Activity': 'Passive planned activity',
+                            'Planned Activity - ACDG Inspection': 'Passive planned activity',
+                            'POFC - Grid': 'POFC',
+                            'POFC - Gen': 'POFC',
+                            'Generator Servicing': 'PPM completed',
+                            'ACDG - Radiator Leakage': 'DG high temperature',
+                            'Rectifier - Controller Failure': 'Rectifier CSU failed',
+                            'Rectifier - Phase Controller': 'Rectifier phase issue',
+                            'Rectifier Distribution': 'Rectifier was worked on',
+                            'ACDG - 12V Relay Faulty': 'Relay was replaced',
+                            'No Intervention': 'SDO',
+                            'Access Issue - Security': 'Security access issue',
+                            'ACDG - Fip Solenoid Cable Faulty': 'Solenoid cable worked on',
+                            'Intrusion - Vandalism/Sabotage': 'Theft',
+                            'AC Cable Stolen': 'Theft',
+                            'Rectifier Theft': 'Theft',
+                            'ACDG - Top Gasket': 'Top gasket replaced',
+                            'ACDG - Turbo Charger': 'Turbo charger issue',
+                            'National Grid - Unstable Grid Supply Issue': 'Unstable grid',
+                            'DCGG - Bus Voltage': 'Voltage fluctuations',
+                            'Tank Sealing Issue - Water In The Fuel': 'Water ingress',
+                            'ACDG - Generator Battery': 'Weak crank battery',
+                            'DG Low Battery': 'Weak crank battery',
+                            'DCGG - Crank Battery': 'Weak crank battery',
+                            'DCDG - Generator Battery': 'Weak crank battery',
+                            'DCGG - Crank Battery Weak/Dead': 'Weak crank battery',
+                            'Gas Outage': 'Gas Outage',
+                            'DCDG - Injector Pump': 'Bad Injector Pump',
+                            'DCDG - Fan Belt': 'Fan belt swapped',
+                            'DCDG - Panel Board': 'DG distribution board issue',
+                            'DCGG - Faulty Expansion Board': 'Faulty expansion board worked on',
+                            'DCGG - Control Panel': 'DG control panel',
+                            'Relay': 'Relay was replaced',
+                            'DCGG - Throttle Motor': 'GG throttle motor',
+                            'DCDG - Radiator': 'DG high temperature',
+                            'DCDG - Solenoid Coil': 'DG solenoid worked on',
+                            'DCGG - CBC': 'Faulty CBC was replaced',
+                            'DCGG - RPM - Gas Flow': 'High pressure regulator worked on',
+                            'DCGG - High Rectifier Temp': 'DG high temperature',
+                            'DCGG - Engine Temp - Faulty Water Pump': 'Faulty water pump',
+                            'DCGG - High Engine Temp - Coolant Level Issue': 'DG high temperature',
+                            'National Grid - Circuit Breaker': 'Grid breaker replaced',
+                            'DCGG - High Engine Temp - Clogged Radiator': 'DG high temperature'
+                        }
+                        
+                        # Map RCA 3
+                        if 'RCA 3' in outages_df.columns:
+                            outages_df['Preferred_RCA'] = outages_df['RCA 3'].map(rca_mapping)
+
+                            def clean_spaces(text):
+                                if pd.isna(text):
+                                    return text
+                                # Replace one or more whitespace characters (\s+) with a single space
+                                return re.sub(r'\s+', ' ', str(text)).strip()
+
+                            # Apply the cleaning function loop
+                            outages_df['Preferred_RCA'] = outages_df['Preferred_RCA'].apply(clean_spaces)
+
+                            # Handle unmapped
+                            outages_df['Preferred_RCA'] = outages_df['Preferred_RCA'].fillna('Unmapped')
+                            
+                            # Handle unmapped
+                            missing_rcas = outages_df[outages_df['Preferred_RCA'].isna() & outages_df['RCA 3'].notna()]['RCA 3'].unique()
+                            if len(missing_rcas) > 0:
+                                st.warning(f"⚠️ {len(missing_rcas)} unmapped RCA3 values. Setting to 'Unmapped'.")
+                            outages_df['Preferred_RCA'] = outages_df['Preferred_RCA'].fillna('Unmapped')
+                            
+                            # Helper function
+                            def format_timedelta_hours(td):
+                                if pd.isna(td):
+                                    return "00:00:00"
+                                total_seconds = int(td.total_seconds())
+                                hours = total_seconds // 3600
+                                minutes = (total_seconds % 3600) // 60
+                                seconds = total_seconds % 60
+                                return f"{hours:02}:{minutes:02}:{seconds:02}"
+                            
+                            # Convert duration
+                            outages_df['Outage Duration TD'] = pd.to_timedelta(outages_df['Outage Duration'], errors='coerce')
+                            
+                            # Site analysis
+                            site_analysis = []
+                            unique_sites = outages_df['Site ID'].unique()
+                            
+                            for site in unique_sites:
+                                site_df = outages_df[outages_df['Site ID'] == site]
+                                
+                                total_count = len(site_df)
+                                total_mttr = site_df['Outage Duration TD'].sum()
+                                total_mttr_str = format_timedelta_hours(total_mttr)
+                                
+                                # ✅ Case-insensitive groupby that preserves original label
+                                rca_stats = (
+                                    site_df
+                                    .groupby(site_df['Preferred_RCA'].str.lower())
+                                    .agg(
+                                        Preferred_RCA=('Preferred_RCA', 'first'),  # keep original casing
+                                        count=('Preferred_RCA', 'count'),
+                                        sum_mttr_seconds=('Outage Duration TD', lambda x: x.sum().total_seconds())
+                                    )
+                                    .reset_index(drop=True)
+                                )
+                                
+                                rca_stats['impact'] = rca_stats['count'] * rca_stats['sum_mttr_seconds']
+                                rca_stats = rca_stats.sort_values(by='impact', ascending=False)
+                                
+                                top_rcas = rca_stats['Preferred_RCA'].head(2).tolist()
+                                distinct_rca_count = site_df['Preferred_RCA'].str.lower().nunique()
+                                concatenated_rca = " | ".join(top_rcas) if top_rcas else "N/A"
+                                
+                                site_analysis.append({
+                                    'Site ID': site,
+                                    'Total count of outages for the site': total_count,
+                                    'Total sum of MTTR for the site': total_mttr_str,
+                                    'Distinct Preferred RCA Count': distinct_rca_count,
+                                    'Concatenated Preferred RCA': concatenated_rca
+                                })
+                            
+                            # Merge back
+                            site_df_analysis = pd.DataFrame(site_analysis)
+                            outages_df = outages_df.merge(site_df_analysis, on='Site ID', how='left')
+                            outages_df = outages_df.drop(columns=['Outage Duration TD'], errors='ignore')
+                            
+                            st.success("✅ RCA mapping complete. Added 5 columns (Preferred_RCA + 4 analysis columns).")
+                        else:
+                            st.warning("⚠️ RCA 3 column not found. Skipping RCA analysis.")
+
                         
                         # Store in session state
                         st.session_state['processed_outages'] = outages_df
                         st.session_state['processed_week_number'] = week_number
+                        st.session_state['target_hours'] = target_hours
+                        st.session_state['trigger_regional_analysis'] = True
                         
                         st.success(f"✅ Processed {len(outages_df)} outages successfully!")
                         
@@ -250,7 +493,6 @@ with col1:
                         
                 except Exception as e:
                     st.error(f"❌ Error processing files: {str(e)}")
-                    # Show the full traceback for debugging
                     import traceback
                     st.code(traceback.format_exc())
         
@@ -259,13 +501,11 @@ with col1:
             st.write("---")
             st.write("**Download Processed File**")
             
-            # Create Excel file in memory
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 st.session_state['processed_outages'].to_excel(writer, index=False, sheet_name='Outages')
             output.seek(0)
             
-            # Generate filename
             filename = f"Week {st.session_state['processed_week_number']} Processed.xlsx"
             
             st.download_button(
@@ -275,6 +515,7 @@ with col1:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+
 
 # ==========================================
 # COLUMN 2: PLACEHOLDER FOR REPORT 2

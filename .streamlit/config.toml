@@ -1,7 +1,10 @@
 [theme]
 base = "dark"
-primaryColor = "#FF5722"
-backgroundColor = "#1E1E1E"
-secondaryBackgroundColor = "#2C2C2C"
-textColor = "#FAFAFA"
+primaryColor = "#A259FF"
+backgroundColor = "#0E0E16"
+secondaryBackgroundColor = "#1A1A27"
+textColor = "#F3F0FF"
 font = "cambria"
+
+[server]
+runOnSave = true
