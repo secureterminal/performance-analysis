@@ -14,3 +14,4 @@ __pycache__/
 .streamlit/secrets.toml
 
 LOCAL_DEV_MODE.txt
+create_admin.py
