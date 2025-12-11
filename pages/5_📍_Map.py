@@ -6,6 +6,7 @@ from streamlit_folium import st_folium
 from folium.plugins import MarkerCluster
 from datetime import datetime
 import numpy as np
+import io
 
 # -------------------------------------------------
 # Page config (MUST be first)
@@ -244,32 +245,85 @@ with tab1:
     # Download buttons
     st.markdown("---")
     st.subheader("Download Filtered Tenant Data")
+
+    tenant_cols = [
+    "IHS Site ID",
+    "Site Address",
+    "Tenant Region",
+    "Tenant ID",
+    "Tenant Operational Status",
+    "IHS Site Priority",
+    "Zone",
+    "Region",
+    "State",
+    "EFS Name",
+    "EFS Email",
+    "EFS Phone",
+    "RTO Name",
+    "RTO Email",
+    "RTO Phone",
+    "Head, Field Service",
+    "Head, Field Service Email",
+    "Head, Field Service Phone",
+    "Customer Experience Manager",
+    "Customer Experience Manager Email",
+    "Customer Experience Manager Phone",
+    "SBC",
+    "Latitude",
+    "Longitude",
+    "Site Operational Status"
+]
+    
     
     col_d1, col_d2 = st.columns(2)
     
     with col_d1:
         mtn_data = filtered[filtered["Tenant Name"] == "MTN NG"]
+        mtn_data = mtn_data[tenant_cols]
+
+        mtn_data = mtn_data.rename(columns={
+            "Tenant Region": "MTN Region",
+            "Tenant ID": "MTN ID"
+        })
+
         if not mtn_data.empty:
-            csv_mtn = mtn_data.to_csv(index=False)
+            # Create an Excel file in memory
+            excel_buffer = io.BytesIO()
+            mtn_data.to_excel(excel_buffer, index=False, engine="openpyxl")
+            excel_buffer.seek(0)
+
             st.download_button(
-                label="📥 Download MTN Sites (CSV)",
-                data=csv_mtn,
-                file_name=f"MTN_Sites_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
+                label="📥 Download MTN Sites",
+                data=excel_buffer,
+                file_name=f"MTN DB {datetime.now().strftime('%d-%b-%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_mtn"
             )
+
     
     with col_d2:
         airtel_data = filtered[filtered["Tenant Name"] == "Airtel NG"]
+        airtel_data = airtel_data[tenant_cols]
+
+        airtel_data = airtel_data.rename(columns={
+            "Tenant Region": "Airtel Region",
+            "Tenant ID": "Airtel ID"
+        })
+
         if not airtel_data.empty:
-            csv_airtel = airtel_data.to_csv(index=False)
+            # Create an Excel file in memory
+            excel_buffer = io.BytesIO()
+            airtel_data.to_excel(excel_buffer, index=False, engine="openpyxl")
+            excel_buffer.seek(0)
+
             st.download_button(
-                label="📥 Download Airtel Sites (CSV)",
-                data=csv_airtel,
-                file_name=f"Airtel_Sites_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv",
+                label="📥 Download Airtel Sites",
+                data=excel_buffer,
+                file_name=f"Airtel DB {datetime.now().strftime('%d-%b-%Y')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="download_airtel"
             )
+
 
 # ---------- MAP TAB ----------
 with tab2:
