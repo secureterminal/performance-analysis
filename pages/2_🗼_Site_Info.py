@@ -459,7 +459,11 @@ else:
 matches = db_filtered.loc[db_filtered["IHS Site ID"] == final_site_id, "tenant_and_id"].dropna().tolist()
 tenant_str = " - ".join(matches) if matches else "-"
 
-st.subheader(f"{final_site_id} - Tenants ({tenant_str})")
+# site_SBC = db_filtered[db_filtered["SBC"] == sbc]
+site_SBC = db_filtered[db_filtered["IHS Site ID"] == final_site_id]["SBC"].iloc[0]
+
+
+st.subheader(f"{final_site_id} - Tenants ({tenant_str}) - {site_SBC}")
 
 try:
     rto_name = df.loc[df["IHS Site ID"] == final_site_id, "RTO Name"].iloc[0]
