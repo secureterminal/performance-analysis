@@ -82,11 +82,14 @@ with col1:
         )
         
         # Week number input
+
+        current_week = datetime.today().isocalendar()[1]
+        previous_week = 52 if current_week == 1 else current_week - 1
         week_number = st.number_input(
             "Week Number",
             min_value=1,
             max_value=53,
-            value=datetime.today().isocalendar()[1] - 1,
+            value=previous_week,
             help="Week number for the output file"
         )
 
